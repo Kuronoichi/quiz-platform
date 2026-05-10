@@ -15,6 +15,7 @@ import {
 } from '@chakra-ui/react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { apiClient } from '../../../api/client';
+import { getApiErrorMessage } from '../../../utils/apiError';
 
 interface QuizFormData {
   title: string;
@@ -44,7 +45,6 @@ export const QuizForm: React.FC = () => {
 
   const [errors, setErrors] = useState<QuizErrors>({});
 
-  // Загрузка данных квиза при редактировании
   React.useEffect(() => {
     if (isEditing && id) {
       const fetchQuiz = async () => {
@@ -59,10 +59,10 @@ export const QuizForm: React.FC = () => {
             status: quiz.status,
             access: quiz.access,
           });
-        } catch (error) {
+        } catch (error: unknown) {
           toast({
             title: 'Ошибка загрузки квиза',
-            description: 'Не удалось загрузить данные квиза. Перенаправляем в список квизов.',
+            description: getApiErrorMessage(error, 'Не удалось загрузить данные квиза. Перенаправляем в список квизов.'),
             status: 'error',
             duration: 5000,
             isClosable: true,
@@ -84,7 +84,6 @@ export const QuizForm: React.FC = () => {
       [name]: value
     }));
 
-    // Очистка ошибок при изменении поля
     if (errors[name as keyof QuizErrors]) {
       setErrors(prev => ({
         ...prev,
@@ -121,7 +120,6 @@ export const QuizForm: React.FC = () => {
       setLoading(true);
 
       if (isEditing && id) {
-        // Обновление существующего квиза
         await apiClient.patch(`/api/quiz/${id}`, formData);
 
         toast({
@@ -132,7 +130,6 @@ export const QuizForm: React.FC = () => {
           isClosable: true,
         });
       } else {
-        // Создание нового квиза
         const response = await apiClient.post('/api/quiz', formData);
 
         toast({
@@ -143,17 +140,15 @@ export const QuizForm: React.FC = () => {
           isClosable: true,
         });
 
-        // Перенаправляем на страницу редактирования вопросов
         navigate(`/quiz/${response.data.quiz_id}/edit`);
         return;
       }
 
-      // После успешного сохранения возвращаемся к списку квизов
       navigate('/quiz');
-    } catch (error) {
+    } catch (error: unknown) {
       toast({
         title: 'Ошибка сохранения',
-        description: 'Не удалось сохранить квиз. Попробуйте позже.',
+        description: getApiErrorMessage(error, 'Не удалось сохранить квиз. Попробуйте позже.'),
         status: 'error',
         duration: 5000,
         isClosable: true,

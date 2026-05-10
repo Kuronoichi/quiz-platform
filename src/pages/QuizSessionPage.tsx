@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Heading,
@@ -8,9 +8,7 @@ import {
   Button,
   useToast,
   Icon,
-  Spinner,
   Badge,
-  Input,
   Modal,
   ModalOverlay,
   ModalContent,
@@ -20,6 +18,7 @@ import {
   ModalCloseButton,
   useDisclosure,
   Code,
+  Spinner,
   FormControl,
   FormLabel,
   NumberInput,
@@ -27,11 +26,14 @@ import {
   NumberInputStepper,
   NumberIncrementStepper,
   NumberDecrementStepper,
+  Divider,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { FiPlay, FiCopy, FiUsers, FiCheck, FiX, FiArrowLeft } from 'react-icons/fi';
+import { AI_FEEDBACK_MAX_REQUESTS_PER_USER } from '../constants/aiFeedback';
+import { FiPlay, FiCopy, FiX, FiArrowLeft, FiCpu, FiDownload } from 'react-icons/fi';
 import { motion } from 'framer-motion';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const MotionBox = motion(Box);
 
@@ -46,18 +48,94 @@ interface Session {
   created_at: string;
   max_players: number | null;
   min_players: number | null;
+  participants_count?: number;
+}
+
+interface FeedbackApiResponse {
+  feedback: {
+    feedback_id: number;
+    text: string;
+    model: string | null;
+    generate_time: string;
+  };
+  requests_used: number;
+  requests_left: number;
 }
 
 export const QuizSessionPage: React.FC = () => {
-  const { id } = useParams();
+  const { id, sessionId: sessionIdParam } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [loadingExisting, setLoadingExisting] = useState(() => Boolean(sessionIdParam));
   const [maxPlayers, setMaxPlayers] = useState<number | undefined>(undefined);
   const [minPlayers, setMinPlayers] = useState<number | undefined>(undefined);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackText, setFeedbackText] = useState<string>('');
+  const [feedbackMeta, setFeedbackMeta] = useState<{ requests_left: number; requests_used: number } | null>(null);
+  const [exportingReport, setExportingReport] = useState(false);
+
+  useEffect(() => {
+    if (!sessionIdParam || !id) {
+      setLoadingExisting(false);
+      return;
+    }
+    const load = async () => {
+      try {
+        setLoadingExisting(true);
+        const response = await apiClient.get<Session>(`/api/session/${sessionIdParam}`);
+        const data = response.data;
+        if (String(data.quiz_id) !== String(id)) {
+          toast({
+            title: 'Сессия не относится к этому квизу',
+            status: 'error',
+            duration: 4000,
+            isClosable: true,
+          });
+          navigate('/sessions', { replace: true });
+          return;
+        }
+        setSession(data);
+      } catch (error: any) {
+        toast({
+          title: 'Не удалось загрузить сессию',
+          description: getApiErrorMessage(error, 'Проверьте ссылку или откройте сессию из списка'),
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        navigate('/sessions', { replace: true });
+      } finally {
+        setLoadingExisting(false);
+      }
+    };
+
+    void load();
+  }, [sessionIdParam, id, navigate, toast]);
+
+  const isScheduledLobby = session?.status === 'scheduled';
+
+  useEffect(() => {
+    if (!sessionIdParam || !isScheduledLobby) return;
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const response = await apiClient.get<Session>(`/api/session/${sessionIdParam}`);
+          const data = response.data;
+          if (String(data.quiz_id) !== String(id)) return;
+          setSession((prev) => {
+            if (prev?.status && prev.status !== 'scheduled') return prev;
+            return data;
+          });
+        } catch {
+        }
+      })();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [sessionIdParam, id, isScheduledLobby]);
 
   const createSession = async () => {
     if (!id) return;
@@ -67,7 +145,7 @@ export const QuizSessionPage: React.FC = () => {
         max_players: maxPlayers || null,
         min_players: minPlayers || null,
       });
-      setSession(response.data);
+      navigate(`/quiz/${id}/session/${response.data.session_id}`, { replace: true });
       onClose();
       toast({
         title: 'Сессия создана',
@@ -79,7 +157,7 @@ export const QuizSessionPage: React.FC = () => {
     } catch (error: any) {
       toast({
         title: 'Ошибка создания сессии',
-        description: error.response?.data?.error || 'Не удалось создать сессию',
+        description: getApiErrorMessage(error, 'Не удалось создать сессию'),
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -105,7 +183,7 @@ export const QuizSessionPage: React.FC = () => {
     } catch (error: any) {
       toast({
         title: 'Ошибка запуска сессии',
-        description: error.response?.data?.error || 'Не удалось запустить сессию',
+        description: getApiErrorMessage(error, 'Не удалось запустить сессию'),
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -131,7 +209,7 @@ export const QuizSessionPage: React.FC = () => {
     } catch (error: any) {
       toast({
         title: 'Ошибка завершения сессии',
-        description: error.response?.data?.error || 'Не удалось завершить сессию',
+        description: getApiErrorMessage(error, 'Не удалось завершить сессию'),
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -152,9 +230,82 @@ export const QuizSessionPage: React.FC = () => {
     });
   };
 
-  const viewResults = () => {
+  const generateCreatorFeedback = async () => {
     if (!session) return;
-    navigate(`/session/${session.session_id}/results`);
+    try {
+      setFeedbackLoading(true);
+      const response = await apiClient.post<FeedbackApiResponse>(`/api/session/${session.session_id}/feedback`);
+      setFeedbackText(response.data.feedback.text);
+      setFeedbackMeta({
+        requests_left: response.data.requests_left,
+        requests_used: response.data.requests_used,
+      });
+      toast({
+        title: 'Отклик сформирован',
+        description: `Осталось запросов: ${response.data.requests_left} из ${AI_FEEDBACK_MAX_REQUESTS_PER_USER}`,
+        status: 'success',
+        duration: 3500,
+        isClosable: true,
+      });
+    } catch (error: unknown) {
+      toast({
+        title: 'Ошибка генерации отклика',
+        description: getApiErrorMessage(error, 'Не удалось получить ИИ-отклик'),
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setFeedbackLoading(false);
+    }
+  };
+
+  const copyCreatorFeedback = async () => {
+    if (!feedbackText) return;
+    await navigator.clipboard.writeText(feedbackText);
+    toast({
+      title: 'Отклик скопирован',
+      status: 'success',
+      duration: 2500,
+      isClosable: true,
+    });
+  };
+
+  const exportSessionReport = async () => {
+    if (!session) return;
+    try {
+      setExportingReport(true);
+      const response = await apiClient.get(`/api/session/${session.session_id}/export`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'text/html;charset=utf-8' });
+      const href = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = href;
+      a.download = `session-report-${session.session_id}.html`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(href);
+
+      toast({
+        title: 'Отчёт выгружен',
+        description: 'Файл отчёта сохранён в загрузки',
+        status: 'success',
+        duration: 3500,
+        isClosable: true,
+      });
+    } catch (error: unknown) {
+      toast({
+        title: 'Ошибка экспорта',
+        description: getApiErrorMessage(error, 'Не удалось выгрузить отчёт'),
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setExportingReport(false);
+    }
   };
 
   return (
@@ -188,7 +339,12 @@ export const QuizSessionPage: React.FC = () => {
                 Управление сессией
               </Text>
 
-              {!session ? (
+              {loadingExisting ? (
+                <VStack spacing={4} py={12}>
+                  <Spinner size="lg" colorScheme="brand" />
+                  <Text color="gray.500">Загрузка сессии…</Text>
+                </VStack>
+              ) : !session ? (
                 <VStack spacing={6} py={8}>
                   <Icon as={FiPlay} boxSize={12} color="brand.500" />
                   <Heading size="md" color="gray.800">
@@ -252,6 +408,20 @@ export const QuizSessionPage: React.FC = () => {
                     </Badge>
                   </HStack>
 
+                  {session.status === 'scheduled' && (
+                    <Text fontSize="sm" color="gray.600" textAlign="center">
+                      Участники вводят код на странице «Присоединиться к квизу» и остаются в ожидании старта — так они
+                      попадают в лобби.
+                      {session.min_players != null && session.min_players > 0 ? (
+                        <>
+                          {' '}
+                          Сейчас в лобби: <strong>{session.participants_count ?? 0}</strong>, нужно минимум{' '}
+                          <strong>{session.min_players}</strong>.
+                        </>
+                      ) : null}
+                    </Text>
+                  )}
+
                   <HStack spacing={3} justify="center" flexWrap="wrap">
                     {session.status === 'scheduled' && (
                       <Button
@@ -276,14 +446,61 @@ export const QuizSessionPage: React.FC = () => {
                       </Button>
                     )}
                     {session.status === 'finished' && (
-                      <Button
-                        colorScheme="brand"
-                        leftIcon={<Icon as={FiUsers} />}
-                        onClick={viewResults}
-                        borderRadius="xl"
-                      >
-                        Просмотреть результаты
-                      </Button>
+                      <VStack spacing={4} align="stretch" w="full" maxW="xl">
+                        <Text fontSize="sm" color="gray.600" textAlign="center">
+                          Итоги и ответы доступны только участникам в их личном кабинете после завершения сессии.
+                        </Text>
+                        <Button
+                          leftIcon={<Icon as={FiCpu} />}
+                          colorScheme="purple"
+                          variant="outline"
+                          onClick={generateCreatorFeedback}
+                          isLoading={feedbackLoading}
+                          alignSelf="center"
+                          borderRadius="xl"
+                        >
+                          Получить ИИ-отклик по сессии
+                        </Button>
+                        <Button
+                          leftIcon={<Icon as={FiDownload} />}
+                          colorScheme="gray"
+                          variant="outline"
+                          onClick={exportSessionReport}
+                          isLoading={exportingReport}
+                          alignSelf="center"
+                          borderRadius="xl"
+                        >
+                          Экспортировать официальный отчёт
+                        </Button>
+                        {feedbackMeta && (
+                          <Text fontSize="xs" color="gray.500" textAlign="center">
+                            Использовано запросов: {feedbackMeta.requests_used}/{AI_FEEDBACK_MAX_REQUESTS_PER_USER} •
+                            Осталось: {feedbackMeta.requests_left}
+                          </Text>
+                        )}
+                        {feedbackText && (
+                          <Box borderWidth="1px" borderColor="gray.200" bg="white" borderRadius="xl" p={5} boxShadow="sm">
+                            <Text fontSize="sm" fontWeight="semibold" color="brand.600" mb={2}>
+                              Персональный ИИ-отклик для создателя
+                            </Text>
+                            <Divider mb={3} />
+                            <Button
+                              size="xs"
+                              leftIcon={<Icon as={FiCopy} />}
+                              variant="outline"
+                              mb={3}
+                              onClick={() => {
+                                void copyCreatorFeedback();
+                              }}
+                            >
+                              Скопировать отклик
+                            </Button>
+                            <Text color="gray.700" whiteSpace="pre-wrap" lineHeight="tall">
+                              {feedbackText}
+                            </Text>
+                          </Box>
+                        )}
+                      </VStack>
                     )}
                   </HStack>
                 </VStack>

@@ -7,21 +7,27 @@ import reportWebVitals from './reportWebVitals';
 const theme = extendTheme({
   fonts: {
     heading:
-      '"Inter", "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+      '"Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
     body:
-      '"Inter", "Manrope", system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif',
+      '"Plus Jakarta Sans", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
+  },
+  shadows: {
+    outline: '0 0 0 3px rgba(139, 130, 242, 0.45)',
+    card: '0 4px 20px -4px rgba(15, 23, 42, 0.08), 0 2px 8px rgba(15, 23, 42, 0.04)',
+    cardHover: '0 12px 40px -8px rgba(15, 23, 42, 0.12), 0 4px 16px rgba(15, 23, 42, 0.06)',
   },
   styles: {
     global: {
       body: {
         bg: 'gray.50',
         color: 'gray.800',
+        WebkitFontSmoothing: 'antialiased',
+        MozOsxFontSmoothing: 'grayscale',
       },
     },
   },
   colors: {
     brand: {
-      // Пастельная лаванда/сирень
       50: '#f6f5ff',
       100: '#eeecff',
       200: '#dbd7ff',
@@ -44,6 +50,16 @@ const theme = extendTheme({
     Input: {
       defaultProps: {
         focusBorderColor: 'brand.400',
+      },
+    },
+    Card: {
+      baseStyle: {
+        container: {
+          borderRadius: '2xl',
+          boxShadow: 'card',
+          borderWidth: '1px',
+          borderColor: 'gray.100',
+        },
       },
     },
   },

@@ -15,16 +15,18 @@ import { apiClient } from '../api/client';
 import { QuestionList } from '../components/quiz/questions/QuestionList';
 import { FiCheck, FiArrowLeft } from 'react-icons/fi';
 import { motion } from 'framer-motion';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const MotionBox = motion(Box);
 
 interface Question {
   id: string;
   question_text: string;
-  question_type: 'single_choice';
+  question_type: 'single_choice' | 'multiple_choice';
   timeLimit: number | null;
   points: number;
   options: { id: string; text: string; isCorrect: boolean }[];
+   media: { id: string; url: string; media_type: 'image' | 'video' }[];
 }
 
 interface Quiz {
@@ -33,6 +35,22 @@ interface Quiz {
   description: string | null;
   status: 'draft' | 'published' | 'archived' | 'deleted';
   access: 'public' | 'private' | 'invite_only';
+}
+
+interface ServerOption {
+  option_id: number;
+  option_text: string;
+  correctness: boolean;
+}
+
+interface ServerQuestion {
+  question_id: number;
+  question_text: string;
+  question_type: 'single_choice' | 'multiple_choice';
+  time_limit: number | null;
+  points: number;
+  options: ServerOption[];
+  media?: { media_id: number; url: string; media_type: 'image' | 'video' }[];
 }
 
 export const QuizQuestionsPage: React.FC = () => {
@@ -54,23 +72,28 @@ export const QuizQuestionsPage: React.FC = () => {
         ]);
         setQuiz(quizRes.data);
         setQuestions(
-          (questionsRes.data as any[]).map((q: any) => ({
-            id: q.question_id.toString(),
+          (questionsRes.data as ServerQuestion[]).map((q) => ({
+            id: String(q.question_id),
             question_text: q.question_text,
-            question_type: (q.question_type || 'single_choice') as 'single_choice',
+            question_type: q.question_type || 'single_choice',
             timeLimit: q.time_limit,
             points: q.points,
-            options: (q.options || []).map((o: any) => ({
-              id: o.option_id.toString(),
+            options: (q.options || []).map((o) => ({
+              id: String(o.option_id),
               text: o.option_text,
               isCorrect: o.correctness,
             })),
+            media: (q.media || []).map((m) => ({
+              id: String(m.media_id),
+              url: m.url,
+              media_type: m.media_type,
+            })),
           }))
         );
-      } catch {
+      } catch (e: unknown) {
         toast({
           title: 'Ошибка загрузки данных',
-          description: 'Не удалось загрузить данные квиза и вопросов. Попробуйте позже.',
+          description: getApiErrorMessage(e, 'Не удалось загрузить данные квиза и вопросов. Попробуйте позже.'),
           status: 'error',
           duration: 5000,
           isClosable: true,
@@ -103,8 +126,8 @@ export const QuizQuestionsPage: React.FC = () => {
     try {
       setLoading(true);
       const currentFromServer = await apiClient.get(`/api/quiz/${id}/questions`);
-      const serverQuestions = currentFromServer.data as any[];
-      const serverIds = new Set(serverQuestions.map((q: any) => q.question_id.toString()));
+      const serverQuestions = currentFromServer.data as ServerQuestion[];
+      const serverIds = new Set(serverQuestions.map((q) => String(q.question_id)));
       const localIds = new Set(questions.map(q => q.id));
 
       for (const q of questions) {
@@ -115,6 +138,9 @@ export const QuizQuestionsPage: React.FC = () => {
             time_limit: q.timeLimit ?? null,
             points: q.points,
             options: q.options.map(o => ({ option_text: o.text, correctness: o.isCorrect })),
+            media: q.media
+              .filter((m) => m.url.trim().length > 0)
+              .map((m) => ({ url: m.url.trim(), media_type: m.media_type })),
           });
         } else if (serverIds.has(q.id)) {
           await apiClient.patch(`/api/quiz/${id}/questions/${q.id}`, {
@@ -123,6 +149,9 @@ export const QuizQuestionsPage: React.FC = () => {
             time_limit: q.timeLimit ?? null,
             points: q.points,
             options: q.options.map(o => ({ option_text: o.text, correctness: o.isCorrect })),
+            media: q.media
+              .filter((m) => m.url.trim().length > 0)
+              .map((m) => ({ url: m.url.trim(), media_type: m.media_type })),
           });
         }
       }
@@ -132,8 +161,14 @@ export const QuizQuestionsPage: React.FC = () => {
 
       toast({ title: 'Вопросы сохранены', description: 'Все вопросы успешно сохранены.', status: 'success', duration: 3000, isClosable: true });
       navigate(`/quiz/${id}`);
-    } catch {
-      toast({ title: 'Ошибка сохранения', description: 'Не удалось сохранить вопросы. Попробуйте позже.', status: 'error', duration: 5000, isClosable: true });
+    } catch (e: unknown) {
+      toast({
+        title: 'Ошибка сохранения',
+        description: getApiErrorMessage(e, 'Не удалось сохранить вопросы. Попробуйте позже.'),
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
     } finally {
       setLoading(false);
     }

@@ -285,14 +285,14 @@ export const HomePage: React.FC = () => {
         position="relative"
         zIndex={1}
       >
-        <Box maxW="1000px" mx="auto">
+        <Box maxW="1000px" mx="auto" w="100%" px={{ base: 0, sm: 1 }}>
           <MotionBox
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.5 }}
           >
-            <VStack spacing={2} mb={10} textAlign="center">
+            <VStack spacing={2} mb={10} textAlign="center" px={{ base: 1, md: 0 }}>
               <Text
                 fontSize="sm"
                 fontWeight="semibold"
@@ -302,7 +302,7 @@ export const HomePage: React.FC = () => {
               >
                 Быстрый старт
               </Text>
-              <Heading size="lg" color="gray.800">
+              <Heading size="lg" color="gray.800" px={2}>
                 Как это работает
               </Heading>
               <Text color="gray.500" maxW="500px">

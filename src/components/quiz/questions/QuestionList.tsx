@@ -19,17 +19,18 @@ import {
 } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
 import { FiPlus, FiEdit, FiTrash } from 'react-icons/fi';
-import { QuestionForm } from './QuestionForm';
+import { QuestionForm, type QuestionFormData } from './QuestionForm';
 
 const MotionBox = motion(Box);
 
 interface Question {
   id: string;
   question_text: string;
-  question_type: 'single_choice';
+  question_type: 'single_choice' | 'multiple_choice';
   timeLimit: number | null;
   points: number;
   options: { id: string; text: string; isCorrect: boolean }[];
+  media: { id: string; url: string; media_type: 'image' | 'video' }[];
 }
 
 interface QuestionListProps {
@@ -48,9 +49,16 @@ export const QuestionList: React.FC<QuestionListProps> = ({
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [editingQuestion, setEditingQuestion] = useState<Question | null>(null);
 
-  const transformQuestionToFormData = (question: Question | null): any | undefined => {
+  const transformQuestionToFormData = (question: Question | null): QuestionFormData | undefined => {
     if (!question) return undefined;
-    return { ...question, timeLimit: question.timeLimit ?? '' };
+    return {
+      question_text: question.question_text,
+      question_type: question.question_type,
+      timeLimit: question.timeLimit ?? '',
+      points: question.points,
+      options: question.options,
+      media: question.media ?? [],
+    };
   };
 
   const handleAddQuestion = () => {
@@ -63,9 +71,17 @@ export const QuestionList: React.FC<QuestionListProps> = ({
     onOpen();
   };
 
-  const handleFormSubmit = (data: any) => {
-    if (editingQuestion) onEditQuestion(editingQuestion.id, data);
-    else onAddQuestion(data);
+  const handleFormSubmit = (data: QuestionFormData) => {
+    const normalized = {
+      question_text: data.question_text,
+      question_type: data.question_type,
+      timeLimit: data.timeLimit === '' ? null : data.timeLimit,
+      points: data.points,
+      options: data.options,
+      media: data.media,
+    };
+    if (editingQuestion) onEditQuestion(editingQuestion.id, normalized);
+    else onAddQuestion(normalized);
     onClose();
   };
 
@@ -125,7 +141,11 @@ export const QuestionList: React.FC<QuestionListProps> = ({
                 <Box flex="1" minW={0}>
                   <HStack spacing={2} mb={2}>
                     <Badge colorScheme="purple" size="sm">Вопрос {index + 1}</Badge>
-                    <Badge colorScheme="teal" variant="outline" size="sm">Один ответ</Badge>
+                    <Badge colorScheme="teal" variant="outline" size="sm">
+                      {question.question_type === 'single_choice'
+                        ? 'Один ответ'
+                        : 'Несколько ответов'}
+                    </Badge>
                     {question.timeLimit != null && (
                       <Badge colorScheme="orange" variant="outline" size="sm">{question.timeLimit} сек</Badge>
                     )}

@@ -13,10 +13,17 @@ import {
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { FiEdit, FiArrowLeft, FiPlay } from 'react-icons/fi';
+import { FiEdit, FiArrowLeft, FiPlay, FiBarChart2 } from 'react-icons/fi';
 import { motion } from 'framer-motion';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const MotionBox = motion(Box);
+
+interface QuestionMedia {
+  media_id: number;
+  url: string;
+  media_type: string;
+}
 
 interface Question {
   question_id: number;
@@ -26,6 +33,7 @@ interface Question {
   points: number;
   order_index: number | null;
   options: { option_id: number; option_text: string; correctness: boolean }[];
+  media?: QuestionMedia[];
 }
 
 interface Quiz {
@@ -51,15 +59,20 @@ export const QuizViewPage: React.FC = () => {
       try {
         setLoading(true);
         const response = await apiClient.get(`/api/quiz/${id}`);
-        const data = response.data;
+        const data = response.data as Quiz;
+        const questions = Array.isArray(data.questions) ? data.questions : [];
         setQuiz({
           ...data,
-          questions: (data.questions || []).map((q: any) => ({ ...q, options: q.options || [] })),
+          questions: questions.map((q) => ({
+            ...q,
+            options: Array.isArray(q.options) ? q.options : [],
+            media: Array.isArray(q.media) ? q.media : [],
+          })),
         });
-      } catch {
+      } catch (e: unknown) {
         toast({
           title: 'Ошибка загрузки квиза',
-          description: 'Не удалось загрузить данные квиза. Попробуйте позже.',
+          description: getApiErrorMessage(e, 'Не удалось загрузить данные квиза. Попробуйте позже.'),
           status: 'error',
           duration: 5000,
           isClosable: true,
@@ -75,6 +88,7 @@ export const QuizViewPage: React.FC = () => {
   const handleEdit = () => navigate(`/quiz/${id}/edit`);
   const handleEditQuestions = () => navigate(`/quiz/${id}/questions`);
   const handleStartSession = () => navigate(`/quiz/${id}/session`);
+  const handleLeaderboard = () => navigate(`/leaderboard/${id}`);
   const handleBack = () => navigate('/quiz');
 
   if (loading) {
@@ -116,8 +130,8 @@ export const QuizViewPage: React.FC = () => {
       <Box position="absolute" top="-100px" right="-100px" w="400px" h="400px" borderRadius="full" bg="brand.100" opacity={0.3} filter="blur(60px)" />
       <Box position="absolute" bottom="-150px" left="-100px" w="500px" h="500px" borderRadius="full" bg="purple.100" opacity={0.3} filter="blur(80px)" />
 
-      <Box position="relative" zIndex={1} px={{ base: 4, md: 8 }} py={{ base: 8, md: 12 }}>
-        <Box maxW="800px" mx="auto">
+      <Box position="relative" zIndex={1} px={{ base: 4, sm: 6, md: 8 }} py={{ base: 6, md: 12 }} pb={{ base: 10, md: 12 }}>
+        <Box maxW="800px" mx="auto" w="100%">
           <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
             <Box
               bg="white"
@@ -145,9 +159,12 @@ export const QuizViewPage: React.FC = () => {
                   {quiz.description}
                 </Text>
               )}
-              <HStack spacing={3} flexWrap="wrap">
+              <HStack spacing={3} flexWrap="wrap" align="stretch">
                 <Button leftIcon={<Icon as={FiPlay} />} colorScheme="green" size="sm" borderRadius="xl" onClick={handleStartSession}>
                   Запустить сессию
+                </Button>
+                <Button leftIcon={<Icon as={FiBarChart2} />} variant="outline" size="sm" borderRadius="xl" onClick={handleLeaderboard}>
+                  Рейтинг игроков
                 </Button>
                 <Button leftIcon={<Icon as={FiEdit} />} colorScheme="brand" size="sm" borderRadius="xl" onClick={handleEdit}>
                   Редактировать
@@ -187,12 +204,56 @@ export const QuizViewPage: React.FC = () => {
                   >
                     <HStack spacing={2} mb={3}>
                       <Badge colorScheme="purple" size="sm">Вопрос {index + 1}</Badge>
-                      <Badge colorScheme="teal" variant="outline" size="sm">{question.question_type}</Badge>
+                      <Badge colorScheme="teal" variant="outline" size="sm">
+                        {question.question_type === 'single_choice'
+                          ? 'Один ответ'
+                          : question.question_type === 'multiple_choice'
+                          ? 'Несколько ответов'
+                          : question.question_type}
+                      </Badge>
                       {question.time_limit != null && (
                         <Badge colorScheme="orange" variant="outline" size="sm">{question.time_limit} сек</Badge>
                       )}
                       <Badge variant="outline" size="sm">Баллы: {question.points}</Badge>
                     </HStack>
+                    {question.media && question.media.length > 0 && (
+                      <Box mb={4}>
+                        {question.media
+                          .filter((m) => m.media_type === 'image')
+                          .map((m) => (
+                            <Box
+                              key={m.media_id}
+                              as="img"
+                              src={m.url}
+                              alt="Иллюстрация к вопросу"
+                              maxH="260px"
+                              w="100%"
+                              objectFit="contain"
+                              borderRadius="lg"
+                              borderWidth="1px"
+                              borderColor="gray.200"
+                              mb={2}
+                            />
+                          ))}
+                        {question.media
+                          .filter((m) => m.media_type === 'video')
+                          .map((m) => (
+                            <Box
+                              key={m.media_id}
+                              as="video"
+                              src={m.url}
+                              controls
+                              preload="metadata"
+                              maxH="320px"
+                              w="100%"
+                              borderRadius="lg"
+                              borderWidth="1px"
+                              borderColor="gray.200"
+                              mb={2}
+                            />
+                          ))}
+                      </Box>
+                    )}
                     <Text fontWeight="medium" color="gray.800" mb={4}>
                       {question.question_text}
                     </Text>

@@ -1,0 +1,1 @@
+export const AI_FEEDBACK_MAX_REQUESTS_PER_USER = 5;

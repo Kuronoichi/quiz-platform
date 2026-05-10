@@ -18,22 +18,23 @@ export const useAuth = () => {
   useEffect(() => {
     const fetchUser = async () => {
       try {
-        // Better Auth endpoint для получения текущего пользователя
-        const baseURL = process.env.REACT_APP_API_URL ?? '';
-        const url = baseURL ? `${baseURL}/api/auth/session` : '/api/auth/session';
-        const response = await apiClient.get(url);
+        const response = await apiClient.get('/api/auth/session');
         if (response.data?.user) {
           setUser(response.data.user as User);
         }
-      } catch (error) {
-        console.error('Error fetching user:', error);
+      } catch {
         setUser(null);
       } finally {
         setLoading(false);
       }
     };
-    fetchUser();
+    void fetchUser();
   }, []);
 
-  return { user, loading, isCreator: user?.role_id === 'creator', isParticipant: user?.role_id === 'participant' };
+  const isCreator = user?.role_id === 'creator' || String(user?.role_id) === '1';
+  const isParticipant = user?.role_id === 'participant' || String(user?.role_id) === '2';
+  const isModerator = user?.role_id === 'moderator' || user?.role_id === 'admin';
+  const isAdmin = user?.role_id === 'admin';
+
+  return { user, loading, isCreator, isParticipant, isModerator, isAdmin };
 };

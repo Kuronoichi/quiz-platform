@@ -12,12 +12,17 @@ import {
   Badge,
   Spinner,
   useToast,
+  Button,
+  type BoxProps,
+  Divider,
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { FiPlus, FiEdit3, FiPlay, FiUsers, FiBarChart2, FiAward, FiTrendingUp } from 'react-icons/fi';
+import { FiPlus, FiList, FiPlay, FiUsers, FiBarChart2, FiAward, FiTrendingUp, FiCheckSquare, FiLogOut, FiShield, FiUser, FiHelpCircle, FiBookOpen } from 'react-icons/fi';
+import type { IconType } from 'react-icons';
 import { useAuth } from '../hooks/useAuth';
 import { apiClient } from '../api/client';
+import { getApiErrorMessage } from '../utils/apiError';
 
 const MotionBox = motion(Box);
 
@@ -40,6 +45,7 @@ interface Analytics {
   };
   recentSessions: Array<{
     session_id: number;
+    quiz_id: number;
     session_code: string;
     status: string;
     quiz_title: string;
@@ -54,7 +60,7 @@ interface Analytics {
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
-  const { user, loading: authLoading, isCreator, isParticipant } = useAuth();
+  const { user, loading: authLoading, isCreator, isParticipant, isModerator, isAdmin } = useAuth();
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -66,10 +72,10 @@ export const DashboardPage: React.FC = () => {
           setLoading(true);
           const response = await apiClient.get('/api/session/analytics');
           setAnalytics(response.data);
-        } catch (error: any) {
+        } catch (error: unknown) {
           toast({
             title: 'Ошибка загрузки аналитики',
-            description: error.response?.data?.error || 'Не удалось загрузить данные',
+            description: getApiErrorMessage(error, 'Не удалось загрузить данные'),
             status: 'error',
             duration: 5000,
             isClosable: true,
@@ -78,11 +84,84 @@ export const DashboardPage: React.FC = () => {
           setLoading(false);
         }
       };
-      fetchAnalytics();
+      void fetchAnalytics();
     } else {
       setLoading(false);
     }
   }, [authLoading, isCreator, toast]);
+
+  type ActionButtonProps = Omit<BoxProps, 'as' | 'onClick'> & {
+    icon: IconType;
+    title: string;
+    description: string;
+    onClick: () => void;
+    colorScheme: string;
+  };
+
+  const ActionButton: React.FC<ActionButtonProps> = ({ icon, title, description, onClick, colorScheme, ...rest }) => (
+    <Box
+      as="button"
+      type="button"
+      onClick={onClick}
+      bg="white"
+      p={5}
+      borderRadius="2xl"
+      boxShadow="sm"
+      borderWidth="1px"
+      borderColor="gray.100"
+      textAlign="left"
+      position="relative"
+      overflow="hidden"
+      sx={{
+        '&::before': {
+          content: '""',
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          height: '3px',
+          opacity: 0.9,
+          background: `linear-gradient(90deg, var(--chakra-colors-${colorScheme}-400), var(--chakra-colors-purple-400))`,
+        },
+      }}
+      _hover={{
+        boxShadow: '0 10px 28px -8px rgba(0,0,0,0.12)',
+        transform: 'translateX(4px)',
+        borderColor: `${colorScheme}.200`,
+      }}
+      _focusVisible={{
+        outline: '2px solid',
+        outlineColor: 'brand.400',
+        outlineOffset: '2px',
+      }}
+      transition="all 0.2s"
+      cursor="pointer"
+      {...rest}
+    >
+      <Flex align="center" gap={4}>
+        <Flex
+          w={12}
+          h={12}
+          borderRadius="xl"
+          bg={`${colorScheme}.50`}
+          color={`${colorScheme}.500`}
+          align="center"
+          justify="center"
+          flexShrink={0}
+        >
+          <Icon as={icon} boxSize={6} />
+        </Flex>
+        <Box>
+          <Text fontWeight="semibold" color="gray.800">
+            {title}
+          </Text>
+          <Text fontSize="sm" color="gray.500">
+            {description}
+          </Text>
+        </Box>
+      </Flex>
+    </Box>
+  );
 
   if (authLoading || loading) {
     return (
@@ -129,30 +208,110 @@ export const DashboardPage: React.FC = () => {
       />
 
       <Box position="relative" zIndex={1} px={{ base: 4, md: 8 }} py={{ base: 8, md: 12 }}>
-        <Box maxW="1000px" mx="auto">
+        <Box maxW="1000px" mx="auto" w="100%">
           <MotionBox
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.4 }}
           >
-            <Text
-              fontSize="sm"
-              fontWeight="semibold"
-              color="brand.500"
-              textTransform="uppercase"
-              letterSpacing="1px"
-              mb={2}
-            >
-              Личный кабинет
-            </Text>
-            <Heading size="lg" color="gray.800" mb={2}>
-              Добро пожаловать в КвизМастер
-            </Heading>
+            <Flex justify="space-between" align="center" mb={2}>
+              <Box>
+                <Text
+                  fontSize="sm"
+                  fontWeight="semibold"
+                  color="brand.500"
+                  textTransform="uppercase"
+                  letterSpacing="1px"
+                >
+                  Личный кабинет
+                </Text>
+                <Heading size="lg" color="gray.800">
+                  Добро пожаловать, {user?.name || 'Гость'}!
+                </Heading>
+              </Box>
+              <HStack spacing={3}>
+                {user && (
+                  <Badge
+                    colorScheme={
+                      isAdmin ? 'red' : isModerator ? 'purple' : isCreator ? 'purple' : 'blue'
+                    }
+                    fontSize="sm"
+                    p={2}
+                    borderRadius="md"
+                  >
+                    Ваша роль:{' '}
+                    {user.role_id === 'admin'
+                      ? 'Администратор'
+                      : user.role_id === 'moderator'
+                        ? 'Модератор'
+                        : user.role_id === 'creator'
+                          ? 'Создатель'
+                          : 'Участник'}
+                  </Badge>
+                )}
+                {user && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    leftIcon={<FiLogOut />}
+                    onClick={async () => {
+                      try {
+                        await apiClient.post('/api/auth/sign-out');
+                      } catch {
+                      } finally {
+                        window.location.href = '/auth';
+                      }
+                    }}
+                  >
+                    Выйти
+                  </Button>
+                )}
+              </HStack>
+            </Flex>
             <Text color="gray.500" mb={8} maxW="500px">
-              {isCreator
-                ? 'Ваш центр управления квизами. Создавайте викторины, приглашайте участников и анализируйте результаты.'
-                : 'Добро пожаловать! Присоединяйтесь к квизам и проверяйте свои знания.'}
+              {isAdmin
+                ? 'Полный доступ: квизы, модерация репортов и блокировка пользователей.'
+                : isModerator
+                  ? 'Модерация контента по репортам на вопросы.'
+                  : isCreator
+                    ? 'Ваш центр управления квизами. Создавайте викторины и приглашайте участников по коду сессии.'
+                    : 'Добро пожаловать! Присоединяйтесь к квизам и проверяйте свои знания.'}
             </Text>
+
+            {isParticipant && (
+              <Box
+                bg="white"
+                borderRadius="2xl"
+                boxShadow="sm"
+                borderWidth="1px"
+                borderColor="gray.100"
+                p={{ base: 5, md: 6 }}
+                mb={8}
+              >
+                <HStack justify="space-between" align="flex-start" flexWrap="wrap" gap={3}>
+                  <Box>
+                    <Text fontWeight="semibold" color="gray.800">
+                      Быстрый старт
+                    </Text>
+                    <Text color="gray.500" fontSize="sm">
+                      Начни с участия — код сессии выдаёт организатор.
+                    </Text>
+                  </Box>
+                  <Button size="sm" variant="outline" leftIcon={<FiPlay />} onClick={() => navigate('/play')}>
+                    Ввести код сессии
+                  </Button>
+                </HStack>
+                <Divider my={4} />
+                <HStack spacing={3} flexWrap="wrap">
+                  <Button size="sm" variant="ghost" leftIcon={<FiCheckSquare />} onClick={() => navigate('/my-results')}>
+                    Мои результаты
+                  </Button>
+                  <Button size="sm" variant="ghost" leftIcon={<FiUsers />} onClick={() => navigate('/how-it-works')}>
+                    Как это работает
+                  </Button>
+                </HStack>
+              </Box>
+            )}
 
             {isCreator && analytics && (
               <Box mb={8}>
@@ -167,147 +326,43 @@ export const DashboardPage: React.FC = () => {
                   Аналитика сессий
                 </Text>
                 <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4} mb={6}>
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3 }}
-                    bg="white"
-                    p={5}
-                    borderRadius="xl"
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor="gray.100"
-                  >
+                   <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} bg="white" p={5} borderRadius="xl" boxShadow="sm" borderWidth="1px" borderColor="gray.100">
                     <VStack align="flex-start" spacing={2}>
                       <HStack>
                         <Icon as={FiBarChart2} color="brand.500" />
-                        <Text fontSize="sm" color="gray.500">
-                          Всего сессий
-                        </Text>
+                        <Text fontSize="sm" color="gray.500">Всего сессий</Text>
                       </HStack>
-                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">
-                        {analytics.sessions.total_sessions}
-                      </Text>
+                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">{analytics.sessions.total_sessions}</Text>
                     </VStack>
                   </MotionBox>
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.1 }}
-                    bg="white"
-                    p={5}
-                    borderRadius="xl"
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor="gray.100"
-                  >
+                  <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }} bg="white" p={5} borderRadius="xl" boxShadow="sm" borderWidth="1px" borderColor="gray.100">
                     <VStack align="flex-start" spacing={2}>
                       <HStack>
                         <Icon as={FiUsers} color="green.500" />
-                        <Text fontSize="sm" color="gray.500">
-                          Участников
-                        </Text>
+                        <Text fontSize="sm" color="gray.500">Участников</Text>
                       </HStack>
-                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">
-                        {analytics.participants.total_participants}
-                      </Text>
+                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">{analytics.participants.total_participants}</Text>
                     </VStack>
                   </MotionBox>
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.2 }}
-                    bg="white"
-                    p={5}
-                    borderRadius="xl"
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor="gray.100"
-                  >
+                  <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }} bg="white" p={5} borderRadius="xl" boxShadow="sm" borderWidth="1px" borderColor="gray.100">
                     <VStack align="flex-start" spacing={2}>
                       <HStack>
                         <Icon as={FiAward} color="purple.500" />
-                        <Text fontSize="sm" color="gray.500">
-                          Средний балл
-                        </Text>
+                        <Text fontSize="sm" color="gray.500">Средний балл</Text>
                       </HStack>
-                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">
-                        {analytics.participants.avg_score
-                          ? Math.round(parseFloat(analytics.participants.avg_score))
-                          : '—'}
-                      </Text>
+                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">{analytics.participants.avg_score ? Math.round(parseFloat(analytics.participants.avg_score)) : '—'}</Text>
                     </VStack>
                   </MotionBox>
-                  <MotionBox
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.3 }}
-                    bg="white"
-                    p={5}
-                    borderRadius="xl"
-                    boxShadow="sm"
-                    borderWidth="1px"
-                    borderColor="gray.100"
-                  >
+                  <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.3 }} bg="white" p={5} borderRadius="xl" boxShadow="sm" borderWidth="1px" borderColor="gray.100">
                     <VStack align="flex-start" spacing={2}>
                       <HStack>
                         <Icon as={FiTrendingUp} color="teal.500" />
-                        <Text fontSize="sm" color="gray.500">
-                          Активных
-                        </Text>
+                        <Text fontSize="sm" color="gray.500">Активных</Text>
                       </HStack>
-                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">
-                        {analytics.sessions.active_sessions}
-                      </Text>
+                      <Text fontSize="2xl" fontWeight="bold" color="gray.800">{analytics.sessions.active_sessions}</Text>
                     </VStack>
                   </MotionBox>
                 </SimpleGrid>
-
-                {analytics.recentSessions.length > 0 && (
-                  <Box bg="white" borderRadius="2xl" boxShadow="sm" borderWidth="1px" borderColor="gray.100" p={6}>
-                    <Text fontSize="sm" fontWeight="semibold" color="brand.500" textTransform="uppercase" letterSpacing="1px" mb={4}>
-                      Последние сессии
-                    </Text>
-                    <VStack spacing={3} align="stretch">
-                      {analytics.recentSessions.map((session) => (
-                        <MotionBox
-                          key={session.session_id}
-                          initial={{ opacity: 0, x: -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ duration: 0.3 }}
-                          p={4}
-                          borderRadius="xl"
-                          bg="gray.50"
-                          _hover={{ bg: 'gray.100' }}
-                          cursor="pointer"
-                          onClick={() => navigate(`/session/${session.session_id}/results`)}
-                        >
-                          <HStack justify="space-between" align="center">
-                            <VStack align="flex-start" spacing={1}>
-                              <HStack>
-                                <Text fontWeight="semibold" color="gray.800">
-                                  {session.quiz_title}
-                                </Text>
-                                <Badge
-                                  colorScheme={
-                                    session.status === 'active' ? 'green' : session.status === 'finished' ? 'gray' : 'yellow'
-                                  }
-                                  size="sm"
-                                >
-                                  {session.status === 'active' ? 'Активна' : session.status === 'finished' ? 'Завершена' : 'Запланирована'}
-                                </Badge>
-                              </HStack>
-                              <Text fontSize="sm" color="gray.500">
-                                Код: {session.session_code} • Участников: {session.participants_count}
-                                {session.avg_score && ` • Средний балл: ${Math.round(parseFloat(session.avg_score))}`}
-                              </Text>
-                            </VStack>
-                          </HStack>
-                        </MotionBox>
-                      ))}
-                    </VStack>
-                  </Box>
-                )}
               </Box>
             )}
 
@@ -322,137 +377,93 @@ export const DashboardPage: React.FC = () => {
               Быстрые действия
             </Text>
             <VStack spacing={4} align="stretch">
-              {isCreator && (
-                <Box
-                  as="button"
-                  type="button"
-                  onClick={() => navigate('/quiz')}
-                  bg="white"
-                  p={5}
-                  borderRadius="2xl"
-                  boxShadow="sm"
-                  borderWidth="1px"
-                  borderColor="gray.100"
-                  textAlign="left"
-                  _hover={{
-                    boxShadow: 'md',
-                    transform: 'translateX(4px)',
-                    borderColor: 'brand.200',
-                  }}
-                  transition="all 0.2s"
-                  cursor="pointer"
-                >
-                  <Flex align="center" gap={4}>
-                    <Flex
-                      w={12}
-                      h={12}
-                      borderRadius="xl"
-                      bg="brand.50"
-                      color="brand.500"
-                      align="center"
-                      justify="center"
-                      flexShrink={0}
-                    >
-                      <Icon as={FiPlus} boxSize={6} />
-                    </Flex>
-                    <Box>
-                      <Text fontWeight="semibold" color="gray.800">
-                        Создать новый квиз
-                      </Text>
-                      <Text fontSize="sm" color="gray.500">
-                        Добавьте вопросы и настройте параметры
-                      </Text>
-                    </Box>
-                  </Flex>
-                </Box>
+              {isModerator && (
+                <>
+                  <ActionButton
+                    icon={FiShield}
+                    title="Модерация репортов"
+                    description="Обработка жалоб на вопросы по подготовленным репортам"
+                    onClick={() => navigate('/moderation')}
+                    colorScheme="orange"
+                  />
+                  <ActionButton
+                    icon={FiBookOpen}
+                    title="Каталог квизов"
+                    description="Просмотр контента квизов для проверки"
+                    onClick={() => navigate('/moderation/quizzes')}
+                    colorScheme="purple"
+                  />
+                  {!isAdmin && !isCreator && !isParticipant && (
+                    <ActionButton
+                      icon={FiHelpCircle}
+                      title="Как это работает"
+                      description="Пошаговые подсказки под вашу роль на платформе"
+                      onClick={() => navigate('/how-it-works')}
+                      colorScheme="gray"
+                    />
+                  )}
+                </>
+              )}
+              {isAdmin && (
+                <ActionButton
+                  icon={FiUser}
+                  title="Администрирование"
+                  description="Пользователи и блокировки"
+                  onClick={() => navigate('/admin')}
+                  colorScheme="red"
+                />
+              )}
+              {(isCreator || isAdmin) && (
+                <ActionButton
+                  icon={FiHelpCircle}
+                  title="Как это работает"
+                  description="Пошаговые подсказки под вашу роль на платформе"
+                  onClick={() => navigate('/how-it-works')}
+                  colorScheme="gray"
+                />
               )}
               {isCreator && (
-                <Box
-                  as="button"
-                  type="button"
-                  onClick={() => navigate('/quiz')}
-                  bg="white"
-                  p={5}
-                  borderRadius="2xl"
-                  boxShadow="sm"
-                  borderWidth="1px"
-                  borderColor="gray.100"
-                  textAlign="left"
-                  _hover={{
-                    boxShadow: 'md',
-                    transform: 'translateX(4px)',
-                    borderColor: 'purple.200',
-                  }}
-                  transition="all 0.2s"
-                  cursor="pointer"
-                >
-                  <Flex align="center" gap={4}>
-                    <Flex
-                      w={12}
-                      h={12}
-                      borderRadius="xl"
-                      bg="purple.50"
-                      color="purple.500"
-                      align="center"
-                      justify="center"
-                      flexShrink={0}
-                    >
-                      <Icon as={FiEdit3} boxSize={6} />
-                    </Flex>
-                    <Box>
-                      <Text fontWeight="semibold" color="gray.800">
-                        Редактировать квизы
-                      </Text>
-                      <Text fontSize="sm" color="gray.500">
-                        Управление существующими квизами и вопросами
-                      </Text>
-                    </Box>
-                  </Flex>
-                </Box>
+                <>
+                  <ActionButton
+                    icon={FiList}
+                    title="Управление квизами"
+                    description="Создание, редактирование и публикация ваших квизов"
+                    onClick={() => navigate('/quiz')}
+                    colorScheme="brand"
+                  />
+                  <ActionButton
+                    icon={FiPlus}
+                    title="Управление сессиями"
+                    description="Запуск и завершение сессий, код для участников"
+                    onClick={() => navigate('/sessions')}
+                    colorScheme="purple"
+                  />
+                </>
               )}
               {isParticipant && (
-                <Box
-                  as="button"
-                  type="button"
-                  onClick={() => navigate('/play')}
-                  bg="white"
-                  p={5}
-                  borderRadius="2xl"
-                  boxShadow="sm"
-                  borderWidth="1px"
-                  borderColor="gray.100"
-                  textAlign="left"
-                  _hover={{
-                    boxShadow: 'md',
-                    transform: 'translateX(4px)',
-                    borderColor: 'green.200',
-                  }}
-                  transition="all 0.2s"
-                  cursor="pointer"
-                >
-                  <Flex align="center" gap={4}>
-                    <Flex
-                      w={12}
-                      h={12}
-                      borderRadius="xl"
-                      bg="green.50"
-                      color="green.500"
-                      align="center"
-                      justify="center"
-                      flexShrink={0}
-                    >
-                      <Icon as={FiPlay} boxSize={6} />
-                    </Flex>
-                    <Box>
-                      <Text fontWeight="semibold" color="gray.800">
-                        Присоединиться к квизу
-                      </Text>
-                      <Text fontSize="sm" color="gray.500">
-                        Введите код сессии для участия в квизе
-                      </Text>
-                    </Box>
-                  </Flex>
-                </Box>
+                <>
+                  <ActionButton
+                    icon={FiHelpCircle}
+                    title="Как это работает"
+                    description="Пошаговые подсказки под вашу роль на платформе"
+                    onClick={() => navigate('/how-it-works')}
+                    colorScheme="gray"
+                  />
+                  <ActionButton
+                    icon={FiPlay}
+                    title="Присоединиться к квизу"
+                    description="Введите код сессии для участия в квизе"
+                    onClick={() => navigate('/play')}
+                    colorScheme="green"
+                  />
+                  <ActionButton
+                    icon={FiCheckSquare}
+                    title="Мои результаты"
+                    description="Просмотр истории участий и результатов"
+                    onClick={() => navigate('/my-results')}
+                    colorScheme="blue"
+                  />
+                </>
               )}
             </VStack>
           </MotionBox>

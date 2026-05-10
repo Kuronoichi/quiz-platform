@@ -1,11 +1,15 @@
 import React from 'react';
-import { Box, Heading, Text } from '@chakra-ui/react';
+import { Box, Heading, Text, Button, Icon } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
+import { useNavigate } from 'react-router-dom';
+import { FiBarChart2 } from 'react-icons/fi';
 import { QuizList } from '../components/quiz/QuizList';
 
 const MotionBox = motion(Box);
 
 export const QuizPage: React.FC = () => {
+  const navigate = useNavigate();
+
   return (
     <Box
       bgGradient="linear(to-br, brand.50, white, purple.50)"
@@ -53,12 +57,34 @@ export const QuizPage: React.FC = () => {
             >
               Управление
             </Text>
-            <Heading size="lg" color="gray.800" mb={2}>
-              Мои квизы
-            </Heading>
-            <Text color="gray.500" mb={8}>
-              Создавайте, редактируйте и публикуйте свои квизы
-            </Text>
+            <Box
+              display="flex"
+              flexDirection={{ base: 'column', sm: 'row' }}
+              justifyContent="space-between"
+              alignItems={{ base: 'stretch', sm: 'center' }}
+              gap={4}
+              mb={2}
+            >
+              <Box>
+                <Heading size="lg" color="gray.800">
+                  Мои квизы
+                </Heading>
+                <Text color="gray.500">
+                  Создавайте, редактируйте и публикуйте свои квизы
+                </Text>
+              </Box>
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Icon as={FiBarChart2} />}
+                borderRadius="xl"
+                onClick={() => navigate('/sessions')}
+                alignSelf={{ base: 'stretch', sm: 'auto' }}
+              >
+                Мои сессии
+              </Button>
+            </Box>
+            <Box h={4} />
             <QuizList />
           </MotionBox>
         </Box>

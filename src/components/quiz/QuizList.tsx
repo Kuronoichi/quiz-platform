@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Box,
   Button,
@@ -21,9 +21,11 @@ import {
   useDisclosure,
 } from '@chakra-ui/react';
 import { motion } from 'framer-motion';
-import { FiPlus, FiEdit, FiTrash, FiEye } from 'react-icons/fi';
+import { FiPlus, FiEdit, FiTrash, FiEye, FiBarChart2 } from 'react-icons/fi';
+import axios from 'axios';
 import { apiClient } from '../../api/client';
 import { useNavigate } from 'react-router-dom';
+import { getApiErrorMessage } from '../../utils/apiError';
 
 const MotionBox = motion(Box);
 
@@ -43,20 +45,16 @@ export const QuizList: React.FC = () => {
   const toast = useToast();
   const navigate = useNavigate();
   const { isOpen, onOpen, onClose } = useDisclosure();
-  const cancelRef = useRef<any>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
-    fetchQuizzes();
-  }, []);
-
-  const fetchQuizzes = async () => {
+  const fetchQuizzes = useCallback(async () => {
     try {
       setLoading(true);
       const response = await apiClient.get('/api/quiz');
       setQuizzes(response.data);
-    } catch (error: any) {
-      const status = error.response?.status;
-      const msg = error.response?.data?.message ?? error.response?.data?.error;
+    } catch (error: unknown) {
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      const msg = getApiErrorMessage(error, '');
       if (status === 403) {
         toast({
           title: 'Доступ запрещён',
@@ -77,11 +75,16 @@ export const QuizList: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [toast]);
+
+  useEffect(() => {
+    void fetchQuizzes();
+  }, [fetchQuizzes]);
 
   const handleCreateQuiz = () => navigate('/quiz/new');
   const handleEditQuiz = (quizId: number) => navigate(`/quiz/${quizId}/edit`);
   const handleViewQuiz = (quizId: number) => navigate(`/quiz/${quizId}`);
+  const handleLeaderboard = (quizId: number) => navigate(`/leaderboard/${quizId}`);
   const handleEditQuestions = (quizId: number) => navigate(`/quiz/${quizId}/questions`);
   const handleDeleteQuiz = (quizId: number, title: string) => {
     setQuizToDelete({ id: quizId, title });
@@ -123,7 +126,7 @@ export const QuizList: React.FC = () => {
         _hover={{ boxShadow: 'md', borderColor: `${accent}.200` }}
         transition="all 0.2s"
       >
-        <Flex justify="space-between" align="flex-start" gap={4}>
+        <Flex direction={{ base: 'column', sm: 'row' }} justify="space-between" align={{ base: 'stretch', sm: 'flex-start' }} gap={4}>
           <Box flex="1" minW={0}>
             <Text fontWeight="semibold" color="gray.800" fontSize="lg" mb={1} noOfLines={1}>
               {quiz.title}
@@ -138,7 +141,17 @@ export const QuizList: React.FC = () => {
               <Badge colorScheme="blue" variant="outline" size="sm">{quiz.access}</Badge>
             </HStack>
           </Box>
-          <HStack spacing={1} flexShrink={0}>
+          <HStack spacing={1} flexShrink={0} flexWrap="wrap" justify={{ base: 'flex-start', sm: 'flex-end' }}>
+            <Tooltip label="Рейтинг игроков">
+              <IconButton
+                aria-label="Рейтинг"
+                icon={<FiBarChart2 />}
+                size="sm"
+                variant="ghost"
+                colorScheme="teal"
+                onClick={() => handleLeaderboard(quiz.quiz_id)}
+              />
+            </Tooltip>
             <Tooltip label="Просмотреть">
               <IconButton aria-label="Просмотреть" icon={<FiEye />} size="sm" variant="ghost" colorScheme="gray" onClick={() => handleViewQuiz(quiz.quiz_id)} />
             </Tooltip>

@@ -10,10 +10,20 @@ import {
   Icon,
   Spinner,
   Badge,
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+  ModalCloseButton,
+  useDisclosure,
+  Textarea,
 } from '@chakra-ui/react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { FiArrowLeft, FiCheck, FiX, FiAward } from 'react-icons/fi';
+import { getApiErrorMessage } from '../utils/apiError';
+import { FiArrowLeft, FiCheck, FiX, FiAward, FiAlertTriangle } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 
 const MotionBox = motion(Box);
@@ -33,6 +43,7 @@ interface Answer {
   time_spent: number | null;
   question_text: string;
   points: number;
+  selected_option_ids?: number[];
 }
 
 interface Question {
@@ -45,6 +56,7 @@ interface Question {
 }
 
 interface Results {
+  quiz_id: number;
   participant: Participant;
   answers: Answer[];
   questions: Question[];
@@ -56,6 +68,10 @@ export const QuizPlayResultsPage: React.FC = () => {
   const toast = useToast();
   const [results, setResults] = useState<Results | null>(null);
   const [loading, setLoading] = useState(true);
+  const { isOpen: isReportOpen, onOpen: onReportOpen, onClose: onReportClose } = useDisclosure();
+  const [reportQuestionId, setReportQuestionId] = useState<number | null>(null);
+  const [reportReason, setReportReason] = useState('');
+  const [reportSubmitting, setReportSubmitting] = useState(false);
 
   useEffect(() => {
     if (!code) return;
@@ -64,10 +80,10 @@ export const QuizPlayResultsPage: React.FC = () => {
         setLoading(true);
         const response = await apiClient.get(`/api/session/code/${code}/results`);
         setResults(response.data);
-      } catch (error: any) {
+      } catch (error: unknown) {
         toast({
           title: 'Ошибка загрузки результатов',
-          description: error.response?.data?.error || 'Не удалось загрузить результаты',
+          description: getApiErrorMessage(error, 'Не удалось загрузить результаты'),
           status: 'error',
           duration: 5000,
           isClosable: true,
@@ -126,6 +142,38 @@ export const QuizPlayResultsPage: React.FC = () => {
   const maxScore = Array.from(questionsMap.values()).reduce((sum, opts) => {
     return sum + (opts[0]?.points || 0);
   }, 0);
+  const pctCorrect = maxScore > 0 ? Math.round((totalScore / maxScore) * 100) : 0;
+
+  const openReport = (questionId: number) => {
+    setReportQuestionId(questionId);
+    setReportReason('');
+    onReportOpen();
+  };
+
+  const submitReport = async () => {
+    if (!results?.quiz_id || reportQuestionId == null || !reportReason.trim()) return;
+    setReportSubmitting(true);
+    try {
+      await apiClient.post(
+        `/api/reports/quiz/${results.quiz_id}/question/${reportQuestionId}`,
+        { reason: reportReason.trim() }
+      );
+      toast({ title: 'Жалоба отправлена', status: 'success', duration: 3000, isClosable: true });
+      onReportClose();
+      setReportQuestionId(null);
+      setReportReason('');
+    } catch (e: unknown) {
+      toast({
+        title: 'Ошибка отправки',
+        description: getApiErrorMessage(e, 'Не удалось отправить жалобу'),
+        status: 'error',
+        duration: 5000,
+        isClosable: true,
+      });
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
 
   return (
     <Box
@@ -177,7 +225,7 @@ export const QuizPlayResultsPage: React.FC = () => {
                   </VStack>
                 </HStack>
                 <Text fontSize="lg" color="gray.600">
-                  {Math.round((totalScore / maxScore) * 100)}% правильных ответов
+                  {pctCorrect}% правильных ответов
                 </Text>
               </VStack>
             </Box>
@@ -200,6 +248,7 @@ export const QuizPlayResultsPage: React.FC = () => {
                   const isCorrect = answer?.correctness || false;
                   const questionText = options[0]?.question_text || '';
                   const points = options[0]?.points || 0;
+                  const selectedIds = new Set(answer?.selected_option_ids ?? []);
 
                   return (
                     <MotionBox
@@ -230,27 +279,54 @@ export const QuizPlayResultsPage: React.FC = () => {
                         {questionText}
                       </Text>
                       <VStack spacing={2} align="stretch" pl={2}>
-                        {options.map((opt) => (
-                          <HStack key={opt.option_id} spacing={3}>
-                            <Box
-                              w={4}
-                              h={4}
-                              borderRadius="full"
-                              bg={opt.correctness ? 'green.200' : 'gray.200'}
-                              borderWidth="2px"
-                              borderColor={opt.correctness ? 'green.500' : 'gray.400'}
-                              display="flex"
-                              alignItems="center"
-                              justifyContent="center"
+                        {options.map((opt) => {
+                          const userPicked = selectedIds.has(opt.option_id);
+                          return (
+                            <HStack
+                              key={opt.option_id}
+                              spacing={3}
+                              py={1}
+                              px={2}
+                              borderRadius="md"
+                              bg={userPicked ? 'orange.50' : 'transparent'}
+                              borderWidth={userPicked ? '1px' : '0'}
+                              borderColor={userPicked ? 'orange.200' : 'transparent'}
                             >
-                              {opt.correctness && <Box w={1.5} h={1.5} borderRadius="full" bg="green.500" />}
-                            </Box>
-                            <Text fontSize="sm" color="gray.700">
-                              {opt.option_text}
-                            </Text>
-                          </HStack>
-                        ))}
+                              <Box
+                                w={4}
+                                h={4}
+                                borderRadius="full"
+                                bg={opt.correctness ? 'green.200' : 'gray.200'}
+                                borderWidth="2px"
+                                borderColor={opt.correctness ? 'green.500' : 'gray.400'}
+                                display="flex"
+                                alignItems="center"
+                                justifyContent="center"
+                              >
+                                {opt.correctness && <Box w={1.5} h={1.5} borderRadius="full" bg="green.500" />}
+                              </Box>
+                              <Text fontSize="sm" color="gray.700">
+                                {opt.option_text}
+                                {userPicked ? (
+                                  <Text as="span" fontSize="xs" color="orange.600" ml={2}>
+                                    (ваш выбор)
+                                  </Text>
+                                ) : null}
+                              </Text>
+                            </HStack>
+                          );
+                        })}
                       </VStack>
+                      <Button
+                        size="xs"
+                        variant="ghost"
+                        colorScheme="orange"
+                        leftIcon={<Icon as={FiAlertTriangle} />}
+                        mt={2}
+                        onClick={() => openReport(questionId)}
+                      >
+                        Пожаловаться на вопрос
+                      </Button>
                     </MotionBox>
                   );
                 })}
@@ -265,6 +341,33 @@ export const QuizPlayResultsPage: React.FC = () => {
           </MotionBox>
         </Box>
       </Box>
+
+      <Modal isOpen={isReportOpen} onClose={onReportClose} size="md">
+        <ModalOverlay />
+        <ModalContent borderRadius="2xl">
+          <ModalHeader>Пожаловаться на вопрос</ModalHeader>
+          <ModalCloseButton />
+          <ModalBody>
+            <Text fontSize="sm" color="gray.500" mb={2}>
+              Опишите причину жалобы. Репорт будет рассмотрен модератором.
+            </Text>
+            <Textarea
+              placeholder="Например: некорректная формулировка, ошибка в ответах..."
+              value={reportReason}
+              onChange={(e) => setReportReason(e.target.value)}
+              rows={4}
+            />
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" onClick={onReportClose}>
+              Отмена
+            </Button>
+            <Button colorScheme="orange" onClick={submitReport} isLoading={reportSubmitting} isDisabled={!reportReason.trim()}>
+              Отправить
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
     </Box>
   );
 };

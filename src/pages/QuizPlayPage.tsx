@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Box,
   Heading,
@@ -8,7 +8,6 @@ import {
   Button,
   useToast,
   Icon,
-  Spinner,
   Input,
   Badge,
   Progress,
@@ -20,10 +19,17 @@ import {
 } from '@chakra-ui/react';
 import { useNavigate } from 'react-router-dom';
 import { apiClient } from '../api/client';
-import { FiPlay, FiArrowRight, FiCheck, FiX } from 'react-icons/fi';
+import { getApiErrorMessage } from '../utils/apiError';
+import { FiPlay, FiArrowRight, FiCheck, FiArrowLeft, FiClock } from 'react-icons/fi';
 import { motion } from 'framer-motion';
 
 const MotionBox = motion(Box);
+
+interface QuestionMedia {
+  media_id: number;
+  url: string;
+  media_type: string;
+}
 
 interface Question {
   question_id: number;
@@ -33,6 +39,7 @@ interface Question {
   points: number;
   order_index: number | null;
   options: { option_id: number; option_text: string; correctness: boolean }[];
+  media?: QuestionMedia[];
 }
 
 interface Quiz {
@@ -52,7 +59,7 @@ interface Session {
 export const QuizPlayPage: React.FC = () => {
   const navigate = useNavigate();
   const toast = useToast();
-  const [step, setStep] = useState<'join' | 'playing' | 'finished'>('join');
+  const [step, setStep] = useState<'join' | 'waiting' | 'playing' | 'finished'>('join');
   const [sessionCode, setSessionCode] = useState('');
   const [session, setSession] = useState<Session | null>(null);
   const [quiz, setQuiz] = useState<Quiz | null>(null);
@@ -61,19 +68,81 @@ export const QuizPlayPage: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [answers, setAnswers] = useState<Record<number, number[]>>({});
+  const [, setAnswers] = useState<Record<number, number[]>>({});
+
+  const recentCodes = useMemo(() => {
+    try {
+      const raw = localStorage.getItem('recent_session_codes');
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((x): x is string => typeof x === 'string' && x.length > 0).slice(0, 5);
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const rememberCode = (code: string) => {
+    try {
+      const norm = code.trim().toUpperCase();
+      if (!norm) return;
+      const raw = localStorage.getItem('recent_session_codes');
+      const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+      const list = Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === 'string') : [];
+      const next = [norm, ...list.filter((c) => c.toUpperCase() !== norm)].slice(0, 10);
+      localStorage.setItem('recent_session_codes', JSON.stringify(next));
+    } catch {
+    }
+  };
 
   useEffect(() => {
-    if (timeLeft !== null && timeLeft > 0 && step === 'playing') {
-      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      return () => clearTimeout(timer);
-    } else if (timeLeft === 0) {
-      handleSubmitAnswer();
-    }
-  }, [timeLeft, step]);
+    if (step !== 'waiting' || !session) return;
+
+    const code = session.session_code;
+    const tick = async () => {
+      try {
+        const sessionResponse = await apiClient.get(`/api/session/code/${code}`);
+        const st = sessionResponse.data?.session?.status as string | undefined;
+        if (st === 'active') {
+          await apiClient.post(`/api/session/code/${code}/join`);
+          rememberCode(code);
+          setSession(sessionResponse.data.session);
+          setQuiz(sessionResponse.data.quiz);
+          setStep('playing');
+          const qs = sessionResponse.data.quiz?.questions;
+          if (qs && qs.length > 0 && qs[0].time_limit) {
+            setTimeLeft(qs[0].time_limit);
+          }
+        } else if (st === 'cancelled' || st === 'finished') {
+          toast({
+            title: 'Сессия закрыта',
+            description: 'Организатор завершил или отменил сессию.',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true,
+          });
+          setStep('join');
+          setSession(null);
+          setQuiz(null);
+        }
+      } catch (error: unknown) {
+        toast({
+          title: 'Не удалось проверить статус',
+          description: getApiErrorMessage(error, 'Повторите попытку позже'),
+          status: 'error',
+          duration: 4000,
+          isClosable: true,
+        });
+      }
+    };
+
+    void tick();
+    const id = window.setInterval(() => void tick(), 3000);
+    return () => window.clearInterval(id);
+  }, [step, session, toast]);
 
   const handleJoin = async () => {
-    if (!sessionCode.trim()) {
+    const normalized = sessionCode.trim().toUpperCase();
+    if (!normalized) {
       toast({
         title: 'Введите код сессии',
         status: 'warning',
@@ -85,12 +154,46 @@ export const QuizPlayPage: React.FC = () => {
 
     try {
       setLoading(true);
-      const sessionResponse = await apiClient.get(`/api/session/code/${sessionCode.toUpperCase()}`);
+      const sessionResponse = await apiClient.get(`/api/session/code/${normalized}`);
       const sessionData = sessionResponse.data;
+      const status = sessionData?.session?.status;
+
+      if (status === 'cancelled' || status === 'finished') {
+        toast({
+          title: 'Сессия недоступна',
+          description: 'Эта сессия уже завершена или отменена.',
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      if (status === 'scheduled') {
+        await apiClient.post(`/api/session/code/${normalized}/join`);
+        rememberCode(normalized);
+        setSession(sessionData.session);
+        setQuiz(sessionData.quiz);
+        setStep('waiting');
+        return;
+      }
+
       setSession(sessionData.session);
       setQuiz(sessionData.quiz);
 
-      await apiClient.post(`/api/session/code/${sessionCode.toUpperCase()}/join`);
+      if (status !== 'active') {
+        toast({
+          title: 'Сессия ещё не началась',
+          description: 'Дождитесь, пока организатор запустит сессию, и попробуйте снова.',
+          status: 'warning',
+          duration: 5000,
+          isClosable: true,
+        });
+        return;
+      }
+
+      await apiClient.post(`/api/session/code/${normalized}/join`);
+      rememberCode(normalized);
 
       setStep('playing');
       if (sessionData.quiz.questions.length > 0) {
@@ -99,10 +202,10 @@ export const QuizPlayPage: React.FC = () => {
           setTimeLeft(firstQuestion.time_limit);
         }
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       toast({
         title: 'Ошибка присоединения',
-        description: error.response?.data?.error || 'Не удалось присоединиться к сессии',
+        description: getApiErrorMessage(error, 'Не удалось присоединиться к сессии'),
         status: 'error',
         duration: 5000,
         isClosable: true,
@@ -112,63 +215,102 @@ export const QuizPlayPage: React.FC = () => {
     }
   };
 
-  const handleSubmitAnswer = async () => {
-    if (!session || !quiz) return;
-    const currentQuestion = quiz.questions[currentQuestionIndex];
-    if (!currentQuestion) return;
+  const submitAnswerInternal = useCallback(
+    async (allowEmpty: boolean) => {
+      if (!session || !quiz) return;
+      const currentQuestion = quiz.questions[currentQuestionIndex];
+      if (!currentQuestion) return;
 
-    if (selectedOptions.length === 0) {
-      toast({
-        title: 'Выберите ответ',
-        status: 'warning',
-        duration: 3000,
-        isClosable: true,
-      });
-      return;
-    }
-
-    try {
-      setSubmitting(true);
-      const startTime = Date.now();
-      await apiClient.post(`/api/session/code/${session.session_code}/answer`, {
-        question_id: currentQuestion.question_id,
-        option_ids: selectedOptions,
-        time_spent: timeLeft !== null ? (currentQuestion.time_limit || 0) - timeLeft : null,
-      });
-
-      setAnswers({ ...answers, [currentQuestion.question_id]: selectedOptions });
-
-      if (currentQuestionIndex < quiz.questions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-        const nextQuestion = quiz.questions[currentQuestionIndex + 1];
-        setSelectedOptions([]);
-        if (nextQuestion.time_limit) {
-          setTimeLeft(nextQuestion.time_limit);
-        } else {
-          setTimeLeft(null);
-        }
-      } else {
-        setStep('finished');
+      if (!allowEmpty && selectedOptions.length === 0) {
+        toast({
+          title: 'Выберите ответ',
+          status: 'warning',
+          duration: 3000,
+          isClosable: true,
+        });
+        return;
       }
-    } catch (error: any) {
-      toast({
-        title: 'Ошибка отправки ответа',
-        description: error.response?.data?.error || 'Не удалось отправить ответ',
-        status: 'error',
-        duration: 5000,
-        isClosable: true,
-      });
-    } finally {
-      setSubmitting(false);
+
+      const payloadIds = allowEmpty && selectedOptions.length === 0 ? [] : selectedOptions;
+
+      try {
+        setSubmitting(true);
+        await apiClient.post(`/api/session/code/${session.session_code}/answer`, {
+          question_id: currentQuestion.question_id,
+          option_ids: payloadIds,
+          time_spent: timeLeft !== null ? (currentQuestion.time_limit || 0) - timeLeft : null,
+        });
+
+        setAnswers((prev) => ({ ...prev, [currentQuestion.question_id]: payloadIds }));
+
+        if (currentQuestionIndex < quiz.questions.length - 1) {
+          setCurrentQuestionIndex(currentQuestionIndex + 1);
+          const nextQuestion = quiz.questions[currentQuestionIndex + 1];
+          setSelectedOptions([]);
+          if (nextQuestion.time_limit) {
+            setTimeLeft(nextQuestion.time_limit);
+          } else {
+            setTimeLeft(null);
+          }
+        } else {
+          setStep('finished');
+        }
+      } catch (error: unknown) {
+        toast({
+          title: 'Ошибка отправки ответа',
+          description: getApiErrorMessage(error, 'Не удалось отправить ответ'),
+          status: 'error',
+          duration: 5000,
+          isClosable: true,
+        });
+        if (allowEmpty && currentQuestion.time_limit) {
+          setTimeLeft(currentQuestion.time_limit);
+        }
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [session, quiz, currentQuestionIndex, selectedOptions, timeLeft, toast]
+  );
+
+  useEffect(() => {
+    if (timeLeft !== null && timeLeft > 0 && step === 'playing') {
+      const timer = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      return () => clearTimeout(timer);
     }
-  };
+    if (timeLeft === 0 && step === 'playing') {
+      setTimeLeft(null);
+      void submitAnswerInternal(true);
+    }
+  }, [timeLeft, step, submitAnswerInternal]);
 
   const handleViewResults = () => {
     if (!session) return;
     navigate(`/play/${session.session_code}/results`);
   };
 
+  const handleLeaveSession = async () => {
+    try {
+      if (session) {
+        await apiClient.post(`/api/session/code/${session.session_code}/leave`);
+      }
+    } catch {
+    } finally {
+      setStep('join');
+      setSession(null);
+      setQuiz(null);
+      setSelectedOptions([]);
+      setCurrentQuestionIndex(0);
+      setTimeLeft(null);
+      setAnswers({});
+      setSessionCode('');
+      navigate('/play');
+    }
+  };
+
   const currentQuestion = quiz?.questions[currentQuestionIndex];
+  const progressPct =
+    quiz && quiz.questions.length > 0 ? Math.round(((currentQuestionIndex + 1) / quiz.questions.length) * 100) : 0;
 
   return (
     <Box
@@ -181,7 +323,7 @@ export const QuizPlayPage: React.FC = () => {
       <Box position="absolute" bottom="-150px" left="-100px" w="500px" h="500px" borderRadius="full" bg="purple.100" opacity={0.3} filter="blur(80px)" />
 
       <Box position="relative" zIndex={1} px={{ base: 4, md: 8 }} py={{ base: 8, md: 12 }}>
-        <Box maxW="800px" mx="auto">
+        <Box maxW="800px" mx="auto" w="100%">
           {step === 'join' && (
             <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
               <Box
@@ -191,16 +333,39 @@ export const QuizPlayPage: React.FC = () => {
                 borderWidth="1px"
                 borderColor="gray.100"
                 p={{ base: 6, md: 8 }}
-                textAlign="center"
               >
-                <VStack spacing={6}>
+                <HStack justify="space-between" mb={4}>
+                  <Button
+                    leftIcon={<Icon as={FiArrowLeft} />}
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => navigate('/dashboard')}
+                  >
+                    В личный кабинет
+                  </Button>
+                </HStack>
+                <VStack spacing={6} textAlign="center">
                   <Icon as={FiPlay} boxSize={16} color="brand.500" />
                   <Heading size="lg" color="gray.800">
                     Присоединиться к квизу
                   </Heading>
                   <Text color="gray.500">
-                    Введите код сессии, который вам предоставил организатор
+                    Введите код сессии от организатора — и вы сразу попадёте в вопросы.
                   </Text>
+                  {recentCodes.length > 0 && (
+                    <Box w="100%" maxW="520px">
+                      <Text fontSize="sm" fontWeight="semibold" color="gray.600" mb={2}>
+                        Последние коды
+                      </Text>
+                      <HStack justify="center" flexWrap="wrap">
+                        {recentCodes.map((c) => (
+                          <Button key={c} size="sm" variant="outline" borderRadius="xl" onClick={() => setSessionCode(c)}>
+                            {c}
+                          </Button>
+                        ))}
+                      </HStack>
+                    </Box>
+                  )}
                   <VStack spacing={4} w="100%" maxW="400px">
                     <Input
                       value={sessionCode}
@@ -226,6 +391,37 @@ export const QuizPlayPage: React.FC = () => {
                       Присоединиться
                     </Button>
                   </VStack>
+                </VStack>
+              </Box>
+            </MotionBox>
+          )}
+
+          {step === 'waiting' && session && quiz && (
+            <MotionBox initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4 }}>
+              <Box
+                bg="white"
+                borderRadius="2xl"
+                boxShadow="sm"
+                borderWidth="1px"
+                borderColor="gray.100"
+                p={{ base: 6, md: 8 }}
+                textAlign="center"
+              >
+                <VStack spacing={5}>
+                  <Icon as={FiClock} boxSize={14} color="brand.500" />
+                  <Heading size="lg" color="gray.800">
+                    Ожидание старта
+                  </Heading>
+                  <Text color="gray.600">
+                    Сессия <strong>{session.session_code}</strong> ещё не запущена организатором. Экран обновится
+                    автоматически, как только игра начнётся.
+                  </Text>
+                  <Text fontSize="sm" color="gray.500">
+                    Квиз: {quiz.title}
+                  </Text>
+                  <Button variant="outline" borderRadius="xl" onClick={handleLeaveSession}>
+                    Выйти
+                  </Button>
                 </VStack>
               </Box>
             </MotionBox>
@@ -261,6 +457,30 @@ export const QuizPlayPage: React.FC = () => {
                   />
                 )}
 
+                <Progress value={progressPct} size="sm" borderRadius="full" colorScheme="brand" mb={5} />
+
+                {currentQuestion.media && currentQuestion.media.length > 0 && (
+                  <Box mb={4}>
+                    {currentQuestion.media
+                      .filter((m) => m.media_type === 'image')
+                      .map((m) => (
+                        <Box
+                          key={m.media_id}
+                          as="img"
+                          src={m.url}
+                          alt="Иллюстрация к вопросу"
+                          maxH="260px"
+                          w="100%"
+                          objectFit="contain"
+                          borderRadius="lg"
+                          borderWidth="1px"
+                          borderColor="gray.200"
+                          mb={2}
+                        />
+                      ))}
+                  </Box>
+                )}
+
                 <Heading size="md" color="gray.800" mb={6}>
                   {currentQuestion.question_text}
                 </Heading>
@@ -287,19 +507,24 @@ export const QuizPlayPage: React.FC = () => {
                   </CheckboxGroup>
                 )}
 
-                <HStack justify="space-between" mt={8} pt={6} borderTopWidth="1px" borderColor="gray.100">
+                <HStack justify="space-between" mt={8} pt={6} borderTopWidth="1px" borderColor="gray.100" spacing={4}>
                   <Text fontSize="sm" color="gray.500">
                     Баллы: {currentQuestion.points}
                   </Text>
-                  <Button
-                    colorScheme="brand"
-                    rightIcon={<Icon as={FiArrowRight} />}
-                    onClick={handleSubmitAnswer}
-                    isLoading={submitting}
-                    borderRadius="xl"
-                  >
-                    {currentQuestionIndex < quiz.questions.length - 1 ? 'Следующий вопрос' : 'Завершить'}
-                  </Button>
+                  <HStack spacing={3}>
+                    <Button variant="ghost" size="sm" onClick={handleLeaveSession}>
+                      Выйти
+                    </Button>
+                    <Button
+                      colorScheme="brand"
+                      rightIcon={<Icon as={FiArrowRight} />}
+                      onClick={() => void submitAnswerInternal(false)}
+                      isLoading={submitting}
+                      borderRadius="xl"
+                    >
+                      {currentQuestionIndex < quiz.questions.length - 1 ? 'Следующий вопрос' : 'Завершить'}
+                    </Button>
+                  </HStack>
                 </HStack>
               </Box>
             </MotionBox>
@@ -331,6 +556,9 @@ export const QuizPlayPage: React.FC = () => {
                     borderRadius="xl"
                   >
                     Просмотреть результаты
+                  </Button>
+                  <Button variant="outline" onClick={handleLeaveSession} borderRadius="xl">
+                    Выйти из сессии
                   </Button>
                 </VStack>
               </Box>

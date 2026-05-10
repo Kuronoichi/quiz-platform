@@ -24,6 +24,7 @@ import {
 import { motion } from 'framer-motion';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { getApiErrorMessage } from '../utils/apiError';
 import {
   FiMail,
   FiLock,
@@ -32,6 +33,9 @@ import {
   FiEye,
   FiEyeOff,
 } from 'react-icons/fi';
+
+const MotionBox = motion(Box);
+const MotionVStack = motion(VStack);
 
 type Mode = 'login' | 'register';
 
@@ -63,7 +67,6 @@ const initialState: AuthFormState = {
   role: 'participant',
 };
 
-// Функция оценки сложности пароля
 const getPasswordStrength = (password: string): { score: number; label: string; color: string } => {
   let score = 0;
   if (password.length >= 8) score += 1;
@@ -182,14 +185,9 @@ export const AuthPage: React.FC = () => {
         isClosable: true,
       });
 
-      // После успешного входа/регистрации отправляем на дашборд,
-      // где позже можно будет развивать функциональность квизов.
       navigate('/dashboard');
     } catch (err: unknown) {
-      const message =
-        axios.isAxiosError(err) && err.response?.data?.message
-          ? err.response.data.message
-          : 'Что-то пошло не так. Попробуйте ещё раз.';
+      const message = getApiErrorMessage(err, 'Что-то пошло не так. Попробуйте ещё раз.');
 
       toast({
         title: 'Ошибка',
@@ -217,22 +215,23 @@ export const AuthPage: React.FC = () => {
   return (
     <Flex
       minH="100vh"
-      bgGradient="linear(to-r, gray.50, white)"
+      bgGradient="linear(135deg, gray.50 0%, white 45%, brand.50 100%)"
       align="center"
       justify="center"
       px={4}
     >
-      <Box
-        as={motion.div}
+      <MotionBox
         initial={{ opacity: 0, y: 16 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: 'easeOut' } as any}
+        transition={{ duration: 0.4, ease: 'easeOut' }}
         w="100%"
         maxW="960px"
         bg="white"
-        boxShadow="xl"
+        boxShadow="0 20px 50px -12px rgba(99, 102, 241, 0.18), 0 8px 24px rgba(0,0,0,0.06)"
         borderRadius="2xl"
         overflow="hidden"
+        borderWidth="1px"
+        borderColor="whiteAlpha.800"
       >
         <Flex direction={{ base: 'column', md: 'row' }}>
           <Box
@@ -267,15 +266,14 @@ export const AuthPage: React.FC = () => {
           <Box
             flex="1"
             p={{ base: 8, md: 10 }}
-            bg="gray.50"
+            bgGradient="linear(to-b, gray.50, gray.100)"
           >
-            <VStack
-              as={motion.div}
+            <MotionVStack
               align="stretch"
               spacing={6}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.35, ease: 'easeOut' } as any}
+              transition={{ duration: 0.35, ease: 'easeOut' }}
               key={mode}
             >
               <Box>
@@ -345,27 +343,65 @@ export const AuthPage: React.FC = () => {
                       </FormControl>
 
                       <FormControl>
-                        <FormLabel>Регистрация как</FormLabel>
-                        <HStack spacing={4} mt={2}>
-                          <Button
-                            size="sm"
-                            variant={form.role === 'participant' ? 'solid' : 'outline'}
-                            colorScheme="brand"
+                        <FormLabel>Роль аккаунта</FormLabel>
+                        <HStack spacing={4} mt={2} align="stretch">
+                          <Box
+                            flex="1"
+                            borderWidth="1px"
+                            borderRadius="xl"
+                            p={4}
+                            cursor="pointer"
+                            borderColor={form.role === 'participant' ? 'brand.400' : 'gray.200'}
+                            bg={form.role === 'participant' ? 'brand.50' : 'white'}
                             onClick={() => setForm(prev => ({ ...prev, role: 'participant' }))}
                           >
-                            Участник квизов
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={form.role === 'creator' ? 'solid' : 'outline'}
-                            colorScheme="teal"
+                            <HStack spacing={2} mb={1}>
+                              <Box
+                                w={2.5}
+                                h={2.5}
+                                borderRadius="full"
+                                borderWidth="2px"
+                                borderColor={form.role === 'participant' ? 'brand.500' : 'gray.300'}
+                                bg={form.role === 'participant' ? 'brand.500' : 'transparent'}
+                              />
+                              <Text fontWeight="semibold" fontSize="sm">
+                                Участник квизов
+                              </Text>
+                            </HStack>
+                            <Text fontSize="xs" color="gray.500">
+                              Проходит квизы, смотрит свои результаты и прогресс.
+                            </Text>
+                          </Box>
+                          <Box
+                            flex="1"
+                            borderWidth="1px"
+                            borderRadius="xl"
+                            p={4}
+                            cursor="pointer"
+                            borderColor={form.role === 'creator' ? 'teal.400' : 'gray.200'}
+                            bg={form.role === 'creator' ? 'teal.50' : 'white'}
                             onClick={() => setForm(prev => ({ ...prev, role: 'creator' }))}
                           >
-                            Создатель контента
-                          </Button>
+                            <HStack spacing={2} mb={1}>
+                              <Box
+                                w={2.5}
+                                h={2.5}
+                                borderRadius="full"
+                                borderWidth="2px"
+                                borderColor={form.role === 'creator' ? 'teal.500' : 'gray.300'}
+                                bg={form.role === 'creator' ? 'teal.500' : 'transparent'}
+                              />
+                              <Text fontWeight="semibold" fontSize="sm">
+                                Создатель контента
+                              </Text>
+                            </HStack>
+                            <Text fontSize="xs" color="gray.500">
+                              Создаёт квизы, запускает сессии и анализирует результаты.
+                            </Text>
+                          </Box>
                         </HStack>
                         <FormHelperText>
-                          Участник — прохождение квизов. Создатель — создание и управление квизами.
+                          Вы всегда сможете зарегистрировать отдельный аккаунт для другой роли.
                         </FormHelperText>
                       </FormControl>
                     </>
@@ -503,10 +539,10 @@ export const AuthPage: React.FC = () => {
                   </Link>
                 </Text>
               )}
-            </VStack>
+            </MotionVStack>
           </Box>
         </Flex>
-      </Box>
+      </MotionBox>
     </Flex>
   );
 };
